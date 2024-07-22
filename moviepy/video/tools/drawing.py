@@ -4,20 +4,18 @@ methods that are difficult to do with the existing Python libraries.
 """
 
 import numpy as np
-
+import torch
 
 def blit(im1, im2, pos=None, mask=None, ismask=False):
-    """ Blit an image over another.
+    """ Blit an image over another using PyTorch.
     
     Blits ``im1`` on ``im2`` as position ``pos=(x,y)``, using the
     ``mask`` if provided. If ``im1`` and ``im2`` are mask pictures
     (2D float arrays) then ``ismask`` must be ``True``.
     """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if pos is None:
         pos = [0, 0]
-
-    # xp1,yp1,xp2,yp2 = blit area on im2
-    # x1,y1,x2,y2 = area of im1 to blit on im2
     xp, yp = pos
     x1 = max(0, -xp)
     y1 = max(0, -yp)
@@ -29,24 +27,23 @@ def blit(im1, im2, pos=None, mask=None, ismask=False):
     y2 = min(h1, h2 - yp)
     xp1 = max(0, xp)
     yp1 = max(0, yp)
-
     if (xp1 >= xp2) or (yp1 >= yp2):
         return im2
-
+    im1 = torch.as_tensor(im1, device=device)
+    im2 = torch.as_tensor(im2, device=device)
     blitted = im1[y1:y2, x1:x2]
-
-    new_im2 = +im2
-
+    new_im2 = im2.clone()
     if mask is None:
         new_im2[yp1:yp2, xp1:xp2] = blitted
     else:
-        mask = mask[y1:y2, x1:x2]
+        mask = torch.as_tensor(mask[y1:y2, x1:x2], device=device)
         if len(im1.shape) == 3:
-            mask = np.dstack(3 * [mask])
+            mask = mask.unsqueeze(-1).expand(-1, -1, 3)
         blit_region = new_im2[yp1:yp2, xp1:xp2]
-        new_im2[yp1:yp2, xp1:xp2] = (1.0 * mask * blitted + (1.0 - mask) * blit_region)
-    
-    return new_im2.astype('uint8') if (not ismask) else new_im2
+        new_im2[yp1:yp2, xp1:xp2] = mask * blitted + (1 - mask) * blit_region
+    if not ismask:
+        new_im2 = new_im2.to(torch.uint8)
+    return new_im2.cpu().numpy()
 
 
 
